@@ -95,6 +95,7 @@ PR-Prüfung vergleicht sie mit dem Chart). Für Updates ist Helm deutlich bequem
 | `files.*` | – | Dokumentablage und Texterkennung (`FILE_STORE_LAYOUT`, `INGESTOR_STORES_FILES`, `FILE_CACHE_MIN_FREE_GB`, `TEXT_EXTRACTION_RUNNER`, `OCR_MEMORY_LIMIT_MB`) wie in `docker-compose.yml` |
 | `worker.live.enabled` | `true` | Eigenes Deployment `mandari-worker-live` für die Warteschlange `live`; aus = der Hauptworker bedient sie mit |
 | `liveStreams.enabled` | `false` | Live-Übertragungen (`LIVE_UEBERTRAGUNG_AKTIV`) |
+| `module.session`, `module.work`, `module.portal` | `true` | Installationsprofil: Module einzeln abschalten (`MODUL_SESSION`, `MODUL_WORK`, `MODUL_PORTAL`, [DEPLOYMENT.md](../../DEPLOYMENT.md#installationsprofile-module-abschalten)) |
 | `worker.enabled` | `true` | Worker für Ereignisse, Aufträge und Zeitpläne (`manage.py events_worker`), gleiches Image und dieselbe Umgebung wie die Anwendung |
 | `worker.replicas` | `1` | Mehrere Worker teilen sich die Arbeit (Leader-Leases, Aufträge per `SKIP LOCKED`) |
 | `worker.maxMemoryMb` | `400` | Speichergrenze des Runners (`TASKS_MAX_MEMORY_MB`), unter `worker.resources.limits.memory` (1Gi; den Rest brauchen die Verwaltungsbefehle der Zeitpläne als eigene Prozesse) halten |

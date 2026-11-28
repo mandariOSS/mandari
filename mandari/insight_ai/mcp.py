@@ -42,6 +42,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
+from apps.common import module
 from hub.ris import selectors as ris
 from insight_ai.services.chat_tools import TOOLS, context_for, run_tool
 from insight_core import throttle
@@ -89,7 +90,8 @@ _ANNOTATIONS = {"readOnlyHint": True, "destructiveHint": False, "idempotentHint"
 
 
 def enabled() -> bool:
-    return bool(getattr(settings, "INSIGHT_MCP_ENABLED", False))
+    """Eingeschaltet (``INSIGHT_MCP_ENABLED``) und mit Bürgerportal: Die Werkzeuge verlinken dessen Seiten."""
+    return bool(getattr(settings, "INSIGHT_MCP_ENABLED", False)) and module.aktiv(module.PORTAL)
 
 
 def instanz_url() -> str:

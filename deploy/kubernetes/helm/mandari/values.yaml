@@ -225,6 +225,14 @@ worker:
         # Der Runner startet oberhalb von maxMemoryMb neu; Tesseract-Unterprozesse brauchen den Rest
         memory: 512Mi
 
+# Module der Installation (MODUL_SESSION, MODUL_WORK, MODUL_PORTAL; Installationsprofil, apps/common/module.py).
+# Ein abgeschaltetes Modul hat keine Adressen, Menüeinträge, Zeitpläne, Abonnements und Bereiche der
+# Schnittstelle; seine Tabellen und Migrationen bleiben. Beispiel nur Session: work und portal auf false.
+module:
+  session: true
+  work: true
+  portal: true
+
 # Live-Übertragungen von Gremiensitzungen (LIVE_UEBERTRAGUNG_AKTIV), Standard aus: keine Anfragen an
 # Streaming-Anbieter, kein Zeitplan
 liveStreams:

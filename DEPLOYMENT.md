@@ -660,6 +660,43 @@ Takt, Änderungsfenster, Vollabgleich, Dokumentabrufe, Schonung bei Fehlern, die
   `INGESTOR_MEM_LIMIT`); weitere, etwa `INGESTOR_REQUEST_INTERVAL`, ergänzen Sie in seinem Abschnitt
   `environment`, im Helm-Chart über `ingestor.extraEnv`.
 
+## Installationsprofile: Module abschalten
+
+Issue #1594, [ADR Installationsprofile](docs/adr/20261128-installationsprofile.md). Jede Installation enthält
+Session, Work und das Bürgerportal. Wer nur einen Teil braucht, schaltet die übrigen in der `.env` ab (Helm:
+`module.session`, `module.work`, `module.portal`):
+
+```bash
+# nur Session (Sitzungsdienst der Verwaltung)
+MODUL_WORK=aus
+MODUL_PORTAL=aus
+```
+
+Erlaubt sind `an` und `aus` (auch `true`/`false`), Standard ist `an`; ein anderer Wert verhindert den Start.
+Ein abgeschaltetes Modul hat
+
+- keine Adressen: `/session/`, `/ladung/` und `/api/v1/session/` bei Session; `/work/`, `/nachweis/`,
+  `/kalender/feed/` und `/api/public/v1/` bei Work; `/insight/`, `/public/`, die Sitemaps und den MCP-Server beim
+  Bürgerportal antworten mit 404, ebenso seine WebSocket-Routen;
+- keine Menüeinträge, auch nicht in der Seitenleiste des Admins, und keine Verweise aus anderen Modulen;
+- keine Zeitpläne und keine Abonnements im Worker, keine Bereiche im Einstieg der Schnittstelle (`/api/`) und
+  keine Befehle.
+
+Seine Tabellen und Migrationen bleiben: `migrate` legt sie weiter an, Fremdschlüssel anderer Module zeigen auf sie.
+Der Admin zeigt seine Modelle weiter, nur nicht in der Seitenleiste. Ohne Bürgerportal bleiben Dokumentvorschau und
+Kartenkacheln unter `/insight/` erreichbar, weil die Recherche in Work sie nutzt. Die installierbare App (PWA)
+startet ohne Work bei der Anmeldung, ohne Work und Session im Bürgerportal.
+
+Prüfen, ob ein Profil läuft und kein abgeschaltetes Modul erreichbar ist:
+
+```bash
+docker compose exec mandari python manage.py installationsprofil_pruefen
+```
+
+Der Befehl prüft Adressen, WebSocket-Routen, Zeitpläne, Abonnements, ruft Probeseiten auf und meldet geladene
+Einstiege abgeschalteter Module; Exit-Code 1 bei einem Befund. Die CI startet jedes Profil (Job
+„Installationsprofile“).
+
 ## 🖧 Mehrere Server (Rollen data / web / worker)
 
 Issues #55, #1107.

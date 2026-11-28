@@ -11,7 +11,9 @@ Abonnements im Code: ``@subscriber`` registriert einen Handler unter einem Namen
 Die Zustellung (``apps.events.dispatch``) ruft den Handler mit Ereignissen in Folgenummer-
 Reihenfolge auf. Handler liegen beim Empfänger, in einem Modul ``subscribers`` seiner App (z. B.
 ``apps/work/subscribers.py``); der Zusteller importiert diese Module beim Start
-(``load_subscribers``). Diese App importiert keine Fachmodule.
+(``load_subscribers``). Diese App importiert keine Fachmodule. Abonnements abgeschalteter Module
+(``apps.common.module``, Issue #1594) gibt es nicht: Ihr Modul ``subscribers`` wird nicht geladen, und ein
+Handler, der ein solches Modul voraussetzt, registriert sich nicht.
 
 - ``transactional=True`` (Standard, Datenbank-Sichten): Handler und Cursor-Fortschritt laufen in
   **einer** Transaktion, der Effekt tritt genau einmal ein. Die Transaktion hält den Sequenzierer
@@ -41,7 +43,8 @@ from typing import TYPE_CHECKING
 
 from django.core.exceptions import ImproperlyConfigured
 from django.db.models import Q
-from django.utils.module_loading import autodiscover_modules
+
+from apps.common import module
 
 if TYPE_CHECKING:
     from .models import Event
@@ -187,6 +190,8 @@ def subscriber(
             from_beginning=from_beginning,
         )
         _pruefen(eintrag)
+        if module.abgeschaltet_fuer(module.code_von(handler)) is not None:
+            return handler  # setzt ein abgeschaltetes Modul voraus (Issue #1594)
         vorhanden = _REGISTRY.get(name)
         if vorhanden is not None and not _gleicher_handler(vorhanden.handler, handler):
             raise ImproperlyConfigured(f"Abonnement {name!r} ist bereits registriert.")
@@ -209,6 +214,6 @@ def get(name: str) -> Subscriber:
 
 
 def load_subscribers() -> list[Subscriber]:
-    """Importiert das Modul ``subscribers`` jeder installierten App und gibt alle Abonnements zurück."""
-    autodiscover_modules("subscribers")
+    """Importiert das Modul ``subscribers`` jeder installierten App (außer abgeschalteter Module), gibt alle zurück."""
+    module.entdecken("subscribers")
     return registered()

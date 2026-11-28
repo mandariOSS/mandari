@@ -44,6 +44,12 @@ class SessionConfig(AppConfig):
 
         demo.weiteren_zugang_melden(_hat_session_zugang)
 
+        # Abgeschaltet (MODUL_SESSION=aus, Issue #1594): keine Befehle, keine Bereiche der Schnittstelle
+        from apps.common import module
+
+        if not module.aktiv(module.SESSION):
+            return
+
         # Befehle beim Dispatcher der Installation registrieren (submission.submit, Issue #540)
         from . import commands  # noqa: F401 – der Import registriert die Handler
 

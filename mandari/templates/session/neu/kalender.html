@@ -1,4 +1,5 @@
 {% extends "session/base_session.html" %}
+{% load modul_tags %}
 {% comment %}
 Sitzungskalender im neuen Rahmen (Issues #82, #756, #944; Bereich Sitzungen, Reiter „Kalender“): Kopfband mit einem
 Satz zum Monat und dem Sitzungsplan als PDF; die Jahresplanung ist der Reiter daneben (nur mit dem Recht, Sitzungen zu
@@ -83,7 +84,7 @@ Seite bleibt session/calendar/month.html.
         <li><c-ui.textlink href="{% url 'session:organization_ics_feed' tenant_slug=tenant_slug org_id=org.id %}" class="inline-flex items-center gap-1.5 min-h-6"><i data-lucide="rss" class="w-3.5 h-3.5" aria-hidden="true"></i>{{ org.name }}</c-ui.textlink></li>
         {% endfor %}
     </ul>
-    {% if session_tenant.oparl_body_id %}
+    {% if session_tenant.oparl_body_id and "portal"|modul_aktiv %}
     <p class="mt-4 text-sm text-gray-700 dark:text-gray-300">Öffentliche Sitzungen erscheinen automatisch im Bürgerportal.</p>
     <ul class="mt-1.5 flex flex-wrap gap-x-5 gap-y-1.5 text-sm">
         <li><c-ui.textlink href="{% url 'insight_core:insight:meeting_year_plan' %}?kommune={{ session_tenant.oparl_body_id }}&year={{ year }}" extern>Öffentlicher Sitzungsplan {{ year }}</c-ui.textlink></li>

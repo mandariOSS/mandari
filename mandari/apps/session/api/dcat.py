@@ -27,6 +27,7 @@ from django.db.models import Max, Min
 from django.http import HttpRequest, HttpResponse
 from django.urls import reverse
 
+from apps.common import module
 from apps.session import oparl_publication as pub
 from apps.session.models import SessionTenant
 from apps.session.services.insight_service import oparl_system_url
@@ -73,7 +74,7 @@ def angebot(tenant: SessionTenant) -> Angebot | None:
     feed = changes.enabled()
     webseite = (
         f"{adressen.site()}{reverse('insight_core:insight:portal_entry', kwargs={'slug': tenant.slug})}"
-        if tenant.insight_publish
+        if tenant.insight_publish and module.aktiv(module.PORTAL)
         else stelle.homepage
     )
     return Angebot(

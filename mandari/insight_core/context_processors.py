@@ -12,6 +12,8 @@ from django.conf import settings
 from django.http import HttpRequest
 from django.utils.functional import SimpleLazyObject
 
+from apps.common import module
+
 from .models import OParlBody
 from .navigation import KOMMUNEN_LISTEN, breadcrumb_area, more_area_listed, nav_area
 from .publication import DETAIL_PAGES, PORTAL_NAMESPACE, body_id_of
@@ -159,8 +161,10 @@ def active_body(request: HttpRequest) -> dict[str, Any]:
 
     ``active_body`` ist die gewählte Kommune (Seitenleiste, Navigation, Listen), ``page_body`` die Kommune der
     angezeigten Seite (Brotkrumen, Fuß, Datenstand, „Zuletzt besucht“); beide unterscheiden sich nur auf
-    Detailseiten.
+    Detailseiten. Ohne Bürgerportal (Issue #1594) gibt es keine Auswahl und keine Verweise in dessen Seiten.
     """
+    if not module.aktiv(module.PORTAL):
+        return {}
     from .portal import get_portal
 
     # Versuche Body aus Session zu laden
