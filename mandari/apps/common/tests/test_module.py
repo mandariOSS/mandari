@@ -8,11 +8,12 @@ Die Profile selbst (je Modul an oder aus, migriert, Probeabrufe) startet die CI 
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Callable
+from typing import Any, cast
 
 import pytest
 from django.core.exceptions import ImproperlyConfigured
-from django.http import HttpResponse
+from django.http import HttpRequest, HttpResponse
 from django.tasks import task
 from django.template import Context, Template
 from django.test import RequestFactory, override_settings
@@ -182,7 +183,9 @@ def test_filter_modul_aktiv() -> None:
 
 
 def test_robots_nennt_die_sitemap_nur_mit_buergerportal() -> None:
-    from insight_core.views.sitemap import robots_txt
+    from insight_core.views import sitemap
+
+    robots_txt = cast(Callable[[HttpRequest], HttpResponse], sitemap.robots_txt)
 
     anfrage = RequestFactory().get("/robots.txt")
     assert b"Sitemap:" in robots_txt(anfrage).content
