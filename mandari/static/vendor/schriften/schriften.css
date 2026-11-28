@@ -170,6 +170,34 @@
     src: url("atkinson-hyperlegible/atkinson-hyperlegible-700-kursiv.woff2") format("woff2");
 }
 @font-face {
+    font-family: "Ubuntu";
+    font-style: normal;
+    font-weight: 400;
+    font-display: block;
+    src: url("ubuntu/ubuntu-400.ttf") format("truetype");
+}
+@font-face {
+    font-family: "Ubuntu";
+    font-style: normal;
+    font-weight: 700;
+    font-display: block;
+    src: url("ubuntu/ubuntu-700.ttf") format("truetype");
+}
+@font-face {
+    font-family: "Ubuntu";
+    font-style: italic;
+    font-weight: 400;
+    font-display: block;
+    src: url("ubuntu/ubuntu-400-kursiv.ttf") format("truetype");
+}
+@font-face {
+    font-family: "Ubuntu";
+    font-style: italic;
+    font-weight: 700;
+    font-display: block;
+    src: url("ubuntu/ubuntu-700-kursiv.ttf") format("truetype");
+}
+@font-face {
     font-family: "Tinos";
     font-style: normal;
     font-weight: 400;

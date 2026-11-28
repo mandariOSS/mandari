@@ -117,6 +117,13 @@ precedence = "override"
 SPDX-FileCopyrightText = "2020 Braille Institute of America, Inc."
 SPDX-License-Identifier = "OFL-1.1"
 
+# Ubuntu: Originaldateien aus github.com/google/fonts (ufl/ubuntu), unverändert (Ubuntu Font Licence 1.0)
+[[annotations]]
+path = "mandari/static/vendor/schriften/ubuntu/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2011 Canonical Ltd."
+SPDX-License-Identifier = "Ubuntu-font-1.0"
+
 [[annotations]]
 path = "mandari/static/vendor/schriften/tinos/**"
 precedence = "override"
