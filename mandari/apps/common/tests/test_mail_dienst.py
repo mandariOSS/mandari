@@ -273,6 +273,33 @@ def test_pruefung_vor_dem_versand(journal: JournalBackend, monkeypatch: pytest.M
     assert _sample("mandari_mail_total", kind="konto.passwort", route="postausgang", result="dropped") == verworfen + 1
 
 
+def test_scheiternde_pruefung_wie_ein_versandfehler(
+    journal: JournalBackend, settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Wirft die Prüfung, wird wiederholt; nach dem letzten Versuch ist die Zeile abgeschlossen, ohne Inhalt."""
+    monkeypatch.setattr(outbox, "_PRUEFUNGEN", {})
+
+    def kaputt(schluessel: str) -> bool:
+        raise RuntimeError("Datenbank weg")
+
+    mail.vor_dem_versand("konto.passwort", kaputt)
+    _senden()
+    assert run_pending() == 1
+    zeile = MailOutbox.objects.get()
+    assert zeile.status == MailOutbox.Status.WARTEND, "Wiederholung"
+    assert TaskRow.objects.get().status == TaskStatus.WARTEND
+
+    settings.TASKS = {"default": {**settings.TASKS["default"], "OPTIONS": {"tasks": {MAIL_TASK: {"max_attempts": 1}}}}}
+    MailOutbox.objects.all().delete()
+    TaskRow.objects.all().delete()
+    _senden()
+    assert run_pending() == 1
+    assert not django_mail.outbox
+    zeile = MailOutbox.objects.get()
+    assert (zeile.status, zeile.error_code) == (MailOutbox.Status.FEHLGESCHLAGEN, "RuntimeError")
+    assert zeile.payload_platform_encrypted is None
+
+
 def test_smtp_fehler_wird_wiederholt(journal: JournalBackend) -> None:
     _senden()
     with mock.patch("apps.common.mail.delivery.send_with", side_effect=OSError("SMTP nicht erreichbar")):

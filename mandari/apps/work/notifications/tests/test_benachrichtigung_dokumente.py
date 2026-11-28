@@ -518,10 +518,12 @@ def test_vertretung_nur_mit_zugang_zum_dokument(org: Any, make_member: Any, auto
     assert weitergeleitet.title.startswith("[Vertretung]")
 
 
+@pytest.mark.parametrize("aenderung", ["freigabe_entzogen", "papierkorb"])
 def test_wartende_mail_nach_entzug_der_freigabe_wird_verworfen(
-    settings: Any, org: Any, autorin: Any, kollege: Any
+    settings: Any, org: Any, autorin: Any, kollege: Any, aenderung: str
 ) -> None:
-    """Die Mail liegt schon im Postausgang, dann wird die Freigabe entzogen: Der Versand prüft den Zugang erneut."""
+    """Die Mail liegt schon im Postausgang, dann wird die Freigabe entzogen bzw. das Dokument in den Papierkorb
+    verschoben: Der Versand prüft den Bezug erneut."""
     from apps.common.mail.outbox import VERWORFEN_VOR_VERSAND
     from apps.common.models import MailOutbox
     from apps.events.task_runner import run_pending
@@ -537,7 +539,10 @@ def test_wartende_mail_nach_entzug_der_freigabe_wird_verworfen(
     assert run_pending(limit=1) == 1, "Auftrag zur Benachrichtigung legt die Mail in den Postausgang"
     assert MailOutbox.objects.get().status == MailOutbox.Status.WARTEND
 
-    freigabe.delete()
+    if aenderung == "freigabe_entzogen":
+        freigabe.delete()
+    else:
+        Motion.objects.filter(pk=geteilt.pk).update(status="deleted")
     assert run_pending() == 1
     assert not mail.outbox
     zeile = MailOutbox.objects.get()

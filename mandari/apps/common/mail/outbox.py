@@ -217,7 +217,15 @@ def deliver_mail(context: TaskContext[Any, Any], outbox_id: str) -> str:
 
     attempt = int(context.attempt)
     pruefung = _PRUEFUNGEN.get(row.kind)
-    if pruefung is not None and not pruefung(row.idempotency_key or ""):
+    try:
+        zustellen = pruefung is None or pruefung(row.idempotency_key or "")
+    except Exception as exc:
+        # Wie ein Fehler beim Versand: wiederholen, nach dem letzten Versuch abschließen und den Inhalt löschen
+        if attempt >= _max_attempts():
+            _abschliessen(row.pk, MailOutbox.Status.FEHLGESCHLAGEN, attempt=attempt, error_code=type(exc).__name__)
+            logger.error("Postausgang: Prüfung vor dem Versand der Mail %s (%s) gescheitert", row.pk, row.kind)
+        raise
+    if not zustellen:
         # Bezug inzwischen entfallen (vom Fachmodul geprüft): nicht mehr zustellen, Inhalt löschen
         logger.info("Postausgang: Mail %s (%s) vor dem Versand verworfen", row.pk, row.kind)
         _abschliessen(row.pk, MailOutbox.Status.FEHLGESCHLAGEN, attempt=attempt, error_code=VERWORFEN_VOR_VERSAND)

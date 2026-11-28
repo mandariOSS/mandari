@@ -259,8 +259,9 @@ class NotificationHub:
     @staticmethod
     def _dokument_verschlossen(recipient, metadata: dict | None) -> bool:
         """
-        Betrifft die Benachrichtigung (``motion_id``) ein Dokument, das der Empfänger heute nicht öffnen darf? Titel und
-        Auszüge stehen im Text. Ohne Dokument (unbekannte oder gelöschte Kennung) gibt es nichts zu verbergen.
+        Betrifft die Benachrichtigung (``motion_id``) ein Dokument, das der Empfänger heute nicht öffnen darf oder das im
+        Papierkorb liegt? Titel und Auszüge stehen im Text. Ohne Dokument (unbekannte oder endgültig gelöschte Kennung)
+        gibt es nichts zu verbergen.
         """
         motion_id = (metadata or {}).get("motion_id")
         if not motion_id:
@@ -273,7 +274,9 @@ class NotificationHub:
             motion = Motion.objects.filter(pk=motion_id, organization_id=recipient.organization_id).first()
         except (ValueError, TypeError, ValidationError):
             return False
-        return motion is not None and not motion.can_access(recipient)
+        if motion is None:
+            return False
+        return motion.status == "deleted" or not motion.can_access(recipient)
 
     @classmethod
     def bezug_verborgen(cls, recipient, notification_type: str, metadata: Any) -> bool:
