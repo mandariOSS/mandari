@@ -233,3 +233,56 @@ def test_briefpapier_datei_nur_mit_zugang_zum_dokument(org: Any, make_member: An
     fremd_client.force_login(andere.user)
     assert autor_client.get(adresse).status_code == 200
     assert fremd_client.get(adresse).status_code == 404
+
+
+def _tagesordnung() -> bytes:
+    """Dreispaltige Tagesordnung ohne Rahmen (Vorlage, Nummer, Text) wie in einer Niederschrift."""
+    puffer = io.BytesIO()
+    leinwand = canvas.Canvas(puffer, pagesize=A4)
+    _, hoehe = A4
+    leinwand.setFont("Helvetica", 11)
+    y = hoehe - 100
+    leinwand.drawString(LINKS, y, "Tagesordnung der Sitzung des Rates")
+    y -= 30
+    for nummer in range(1, 6):
+        leinwand.drawString(LINKS, y, f"V/0{nummer}00/2025")
+        leinwand.drawString(200, y, f"{nummer}.")
+        leinwand.drawString(240, y, "Satzung zur Änderung der Betriebssatzung der")
+        leinwand.drawString(LINKS, y - 14, "OB")
+        leinwand.drawString(240, y - 14, f"Stadt für den Eigenbetrieb Nummer {nummer}")
+        y -= 42
+    leinwand.drawString(LINKS, y, "Die Sitzung endete um 20:03 Uhr.")
+    leinwand.showPage()
+    leinwand.save()
+    return puffer.getvalue()
+
+
+def test_spalten_ohne_rahmen_werden_tabelle() -> None:
+    html = sanitize_editor_html(pdf_treu.uebernehmen(_tagesordnung()).html)
+    assert html.count('<table data-rahmen="ohne">') == 1
+    tabelle = html[html.index("<table") : html.index("</table>")]
+    assert tabelle.count("<tr>") == 5
+    assert "V/0100/2025" in tabelle and "OB" in tabelle and "Eigenbetrieb Nummer 5" in tabelle
+    assert re.search(r'<td colwidth="\d+">', tabelle)
+    # Text vor und nach der Tabelle bleibt Fließtext
+    assert html.index("Tagesordnung der Sitzung") < html.index("<table")
+    assert html.index("endete um 20:03 Uhr") > html.index("</table>")
+
+
+def test_positivliste_tabelle_ohne_rahmen() -> None:
+    assert 'data-rahmen="ohne"' in sanitize_editor_html('<table data-rahmen="ohne"><tr><td>x</td></tr></table>')
+    assert "data-rahmen" not in sanitize_editor_html('<table data-rahmen="rot"><tr><td>x</td></tr></table>')
+
+
+def test_druckansicht_behaelt_seitenumbruch_und_tabelle_ohne_rahmen() -> None:
+    from types import SimpleNamespace
+
+    from apps.work.motions.druck import druck_inhalt
+
+    motion = SimpleNamespace(
+        content='<p>a</p><div data-page-break="true"></div><table data-rahmen="ohne"><tr><td><p>b</p></td></tr></table>',
+        template=None,
+    )
+    inhalt = druck_inhalt(motion)  # type: ignore[arg-type]
+    assert 'data-page-break="true"' in inhalt
+    assert 'data-rahmen="ohne"' in inhalt

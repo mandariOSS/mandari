@@ -124,6 +124,7 @@ GLOBAL_ATTRS = frozenset(
 TAG_ATTRS: dict[str, frozenset[str]] = {
     "a": frozenset({"href", "target", "rel"}),
     "img": frozenset({"src", "alt", "title", "width", "height"}),
+    "table": frozenset({"data-rahmen"}),
     "td": frozenset({"colspan", "rowspan", "colwidth"}),
     "th": frozenset({"colspan", "rowspan", "colwidth"}),
     "col": frozenset({"span"}),
@@ -165,6 +166,7 @@ STYLE_RULES: dict[str, re.Pattern[str]] = {
     "margin-bottom": re.compile(rf"^{_LENGTH}$"),
     "line-height": re.compile(rf"^(?:{_LENGTH}|\d(?:\.\d{{1,3}})?)$"),
     "padding-left": re.compile(rf"^{_LENGTH}$"),
+    "padding-right": re.compile(rf"^{_LENGTH}$"),
     "text-indent": re.compile(rf"^-?{_LENGTH}$"),
     "tab-size": re.compile(rf"^{_LENGTH}$"),
     "word-spacing": re.compile(r"^-?\d{1,2}(?:\.\d{1,3})?pt$"),
@@ -326,6 +328,9 @@ def _clean_attr(tag: str, name: str, value: str | None) -> str | None:
         return value if value in ("1", "a", "A", "i", "I") else None
     if name == "data-type":
         return value if value in ("taskList", "taskItem", "mention") else None
+    if name == "data-rahmen":
+        # Tabelle ohne Rahmen (Spalten eines treu übernommenen PDFs, #1600)
+        return value if value == "ohne" else None
     if name in ("data-checked", "data-resolved", "data-page-break"):
         return value if value in ("true", "false") else None
     if name in ("data-id", "data-von"):

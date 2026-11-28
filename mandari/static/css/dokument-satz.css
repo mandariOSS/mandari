@@ -223,6 +223,17 @@
   margin: 0;
 }
 
+/* Spalten ohne Rahmen (treu übernommenes PDF, #1600): Zellen ohne Rahmen und Innenabstand, Abstände tragen die
+   Absätze */
+#editor-container .tiptap.dokument-satz table[data-rahmen="ohne"] :is(td, th) {
+  padding: 0;
+  border: none;
+  background: none;
+}
+#editor-container .tiptap.dokument-satz .tableWrapper:has(> table[data-rahmen="ohne"]) {
+  margin: 0;
+}
+
 /* Aufgabenlisten */
 #editor-container .tiptap.dokument-satz ul[data-type="taskList"] {
   margin: 0 0 0.7em;

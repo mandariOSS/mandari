@@ -177,11 +177,27 @@ class Bereich:
 
 
 @dataclass
+class Tabelle:
+    """Spalten ohne Rahmen (Tagesordnung: Vorlage ⇥ Nummer ⇥ Text): Reihen aus Zellen mit Teilzeilen."""
+
+    seite: int
+    #: Linke Kanten der Spalten (x in pt); die erste Spalte beginnt am Satzspiegel
+    spalten: list[float]
+    reihen: list[list[list[Zeile]]]
+    #: Ober- und Unterkante im Original (beim Setzen bestimmt)
+    oben: float = 0.0
+    unten: float = 0.0
+
+
+@dataclass
 class Absatz:
     zeilen: list[Zeile]
-    art: str = "text"  # text | grafik | umbruch
+    art: str = "text"  # text | grafik | tabelle
     bereich: Bereich | None = None
     bild: bytes = b""
+    tabelle: Tabelle | None = None
+    #: Rechte Kante des Blocksatzes (kann vor dem Satzspiegel enden: Einzug rechts)
+    rand_rechts: float | None = None
 
 
 @dataclass
@@ -723,15 +739,163 @@ def _listenzeichen(zeile: Zeile) -> tuple[str, float] | None:
     return kandidat, text_x
 
 
-def _absaetze(fluss: list[Zeile], links: float, rechts: float, grafiken: list[Bereich]) -> list[Absatz]:
-    elemente: list[tuple[int, float, Any]] = [(z.seite, z.grund, z) for z in fluss]
+def _teilzeile(zeile: Zeile, von: int, bis: int) -> Zeile:
+    """Zeichen ``von`` bis ``bis`` (ohne) einer Zeile als eigene Zeile (Zelle einer Spalte)."""
+    while von < bis and not zeile.zeichen[von][0].strip():
+        von += 1
+    while bis > von and not zeile.zeichen[bis - 1][0].strip():
+        bis -= 1
+    laeufe: list[Lauf] = []
+    pos = 0
+    for lauf in zeile.laeufe:
+        anfang, ende = pos, pos + len(lauf.text)
+        a, b = max(anfang, von), min(ende, bis)
+        if a < b:
+            teil = Lauf(
+                lauf.text[a - anfang : b - anfang],
+                lauf.schrift,
+                lauf.groesse,
+                lauf.fett,
+                lauf.kursiv,
+                lauf.farbe,
+                lauf.x0,
+                lauf.x1,
+                lauf.unterstrichen,
+                quelle=lauf.quelle,
+            )
+            laeufe.append(teil)
+        pos = ende
+    zeichen = zeile.zeichen[von:bis]
+    return Zeile(
+        zeile.seite,
+        zeile.grund,
+        zeichen[0][1] if zeichen else zeile.x0,
+        zeichen[-1][2] if zeichen else zeile.x1,
+        zeile.oben,
+        zeile.unten,
+        laeufe,
+        "zelle",
+        zeichen=zeichen,
+    )
+
+
+def _segmente(zeile: Zeile) -> list[tuple[int, int, float, float]]:
+    """Teile einer Zeile zwischen großen Lücken (Spalten): (Anfang, Ende, linke, rechte Kante)."""
+    woerter = _woerter(zeile)
+    if not woerter:
+        return []
+    grenze = max(3 * _leer(zeile), 8.0)
+    segmente = [list(woerter[0])]
+    for wort in woerter[1:]:
+        if wort[2] - segmente[-1][3] > grenze:
+            segmente.append(list(wort))
+        else:
+            segmente[-1][1], segmente[-1][3] = wort[1], wort[3]
+    return [(int(a), int(b), float(x0), float(x1)) for a, b, x0, x1 in segmente]
+
+
+def _tabellen_erkennen(fluss: list[Zeile], links: float, rechts: float) -> list[Tabelle]:
+    """
+    Spalten ohne Rahmen erkennen: Folgen von Zeilen, deren Teile an wenigen festen Stellen beginnen (mindestens zwei
+    Zeilen mit mehreren Teilen). Ihre Zeilen werden zu Zellen einer Tabelle; eine Reihe beginnt nach einem größeren
+    Abstand.
+    """
+    tabellen: list[Tabelle] = []
+    nach_seite: dict[int, list[Zeile]] = {}
+    for zeile in fluss:
+        nach_seite.setdefault(zeile.seite, []).append(zeile)
+    for seite, zeilen in nach_seite.items():
+        zeilen.sort(key=lambda z: z.grund)
+        teile = {id(z): _segmente(z) for z in zeilen}
+
+        def liste(zeile: Zeile, teile: dict[int, list[tuple[int, int, float, float]]] = teile) -> bool:
+            stuecke = teile[id(zeile)]
+            erstes = zeile.text[stuecke[0][0] : stuecke[0][1]].strip() if stuecke else ""
+            return len(stuecke) == 2 and bool(_LISTENZEICHEN_RE.match(erstes))
+
+        mehrteilig = [z for z in zeilen if len(teile[id(z)]) >= 2 and not liste(z)]
+        if len(mehrteilig) < 2:
+            continue
+        anfaenge = sorted(t[2] for z in mehrteilig for t in teile[id(z)])
+        haufen: list[list[float]] = []
+        for x in anfaenge:
+            if haufen and x - haufen[-1][-1] < 3:
+                haufen[-1].append(x)
+            else:
+                haufen.append([x])
+        spalten = [statistics.median(h) for h in haufen if len(h) >= 2]
+        if len(spalten) < 2:
+            continue
+
+        def spalte_von(x: float, spalten: list[float] = spalten) -> int | None:
+            return next((i for i, s in enumerate(spalten) if abs(x - s) < 3), None)
+
+        def passt(
+            zeile: Zeile, spalten: list[float] = spalten, teile: dict[int, list[tuple[int, int, float, float]]] = teile
+        ) -> bool:
+            stuecke = teile[id(zeile)]
+            if not stuecke:
+                return False
+            nummern = [spalte_von(t[2]) for t in stuecke]
+            if any(n is None for n in nummern) or nummern != sorted(set(nummern)):  # type: ignore[type-var]
+                return False
+            # Jeder Teil endet vor der nächsten Spalte
+            for stueck, nummer in zip(stuecke, nummern, strict=True):
+                assert nummer is not None
+                if nummer + 1 < len(spalten) and stueck[3] > spalten[nummer + 1] - 1:
+                    return False
+            return True
+
+        folge: list[Zeile] = []
+        kandidaten: list[Zeile | None] = [*zeilen, None]
+        for kandidat in kandidaten:
+            if kandidat is not None and passt(kandidat):
+                folge.append(kandidat)
+                continue
+            if len(folge) >= 3 and sum(1 for z in folge if len(teile[id(z)]) >= 2 and not liste(z)) >= 2:
+                tabellen.append(_tabelle_bauen(seite, folge, teile, spalten, links))
+            folge = []
+    return tabellen
+
+
+def _tabelle_bauen(
+    seite: int,
+    zeilen: list[Zeile],
+    teile: dict[int, list[tuple[int, int, float, float]]],
+    spalten: list[float],
+    links: float,
+) -> Tabelle:
+    abstaende = [b.grund - a.grund for a, b in pairwise(zeilen)]
+    takt = statistics.median([a for a in abstaende if a > 0] or [zeilen[0].groesse * 1.2])
+    reihen: list[list[list[Zeile]]] = []
+    vorige: Zeile | None = None
+    for zeile in zeilen:
+        if vorige is None or zeile.grund - vorige.grund > takt * 1.3:
+            reihen.append([[] for _ in spalten])
+        for von, bis, x0, _ in teile[id(zeile)]:
+            nummer = next(i for i, s in enumerate(spalten) if abs(x0 - s) < 3)
+            reihen[-1][nummer].append(_teilzeile(zeile, von, bis))
+        zeile.rolle = "tabelle"
+        vorige = zeile
+    return Tabelle(seite, [links, *spalten[1:]], reihen)
+
+
+def _absaetze(
+    fluss: list[Zeile], links: float, rechts: float, grafiken: list[Bereich], tabellen: list[Tabelle] | None = None
+) -> list[Absatz]:
+    elemente: list[tuple[int, float, Any]] = [(z.seite, z.grund, z) for z in fluss if z.rolle != "tabelle"]
     elemente += [(g.seite, g.oben, g) for g in grafiken]
+    elemente += [(t.seite, _erste_zeile(t).grund - 0.01, t) for t in tabellen or []]
     elemente.sort(key=lambda e: (e[0], e[1], e[2].x0 if isinstance(e[2], Zeile) else 0))
     absaetze: list[Absatz] = []
     akt: Absatz | None = None
     for _, _, element in elemente:
         if isinstance(element, Bereich):
             absaetze.append(Absatz([], art="grafik", bereich=element))
+            akt = None
+            continue
+        if isinstance(element, Tabelle):
+            absaetze.append(Absatz([], art="tabelle", tabelle=element))
             akt = None
             continue
         zeile = element
@@ -741,6 +905,10 @@ def _absaetze(fluss: list[Zeile], links: float, rechts: float, grafiken: list[Be
             akt = Absatz([zeile])
             absaetze.append(akt)
     return absaetze
+
+
+def _erste_zeile(tabelle: Tabelle) -> Zeile:
+    return min((z for reihe in tabelle.reihen[:1] for zelle in reihe for z in zelle), key=lambda z: z.grund)
 
 
 def _gehoert_dazu(absatz: Absatz, zeile: Zeile, links: float, rechts: float) -> bool:
@@ -906,6 +1074,9 @@ def _stauchen(absatz: Absatz, rechts: float, text_ab: int) -> None:
         leer = _leer(zeile)
         breite = rechts - woerter[0][2]
         natuerlich = _natuerlich(woerter, leer)
+        # Mit Zeichenabstand (auf Pixel gerundete Breiten) wird jede Zeile um ihn je Zeichen schmaler oder breiter
+        abstand = zeile.laeufe[0].zeichenabstand if zeile.laeufe else 0.0
+        natuerlich += abstand * (sum(w[1] - w[0] for w in woerter) + len(woerter) - 1)
         abstaende = len(woerter) - 1
         # Auch knapp passende Zeilen etwas stauchen: Rundungen im Browser kosten sonst das letzte Wort
         noetig = (natuerlich - breite + 0.3) / abstaende
@@ -921,7 +1092,7 @@ def _stauchen(absatz: Absatz, rechts: float, text_ab: int) -> None:
             lauf.wortabstand = -round(wert, 3)
 
 
-def _zeichenabstand(zeile: Zeile, ab: int) -> None:
+def _zeichenabstand(zeile: Zeile, ab: int, nur_im_wort: bool = False) -> None:
     """
     Breite der Zeile wie im Original: Manche Programme (Word im Kompatibilitätsmodus) runden jede Zeichenbreite auf
     ganze Bildschirmpixel, die Zeile wird dadurch schmaler oder breiter als mit den Breiten der Schrift. Der Mittelwert
@@ -935,6 +1106,8 @@ def _zeichenabstand(zeile: Zeile, ab: int) -> None:
         a, b = zeichen[k], zeichen[k + 1]
         if b[1] - a[2] > max(2 * leer, 4.0):
             continue  # Tabulator oder große Lücke
+        if nur_im_wort and (not a[0].strip() or not b[0].strip()):
+            continue  # Blocksatz: Wortabstände sind gedehnt
         abweichungen.append(b[1] - a[2])
     if len(abweichungen) < 8:
         return
@@ -1022,6 +1195,7 @@ def _absatz_html(
     basis_groesse: float,
     zeilenhoehen: dict[tuple[str, float], float],
     pixel: bool = False,
+    abstand_vor: float | None = None,
 ) -> str:
     erste = absatz.zeilen[0]
     haupt = erste.haupt()
@@ -1034,7 +1208,9 @@ def _absatz_html(
     stile: list[str] = []
     # Senkrechte Lage: Abstand so, dass die erste Grundlinie genau an der Stelle des Originals steht
     oben_kasten = erste.grund - _grundlinie_im_kasten(zeilenhoehe, schluessel, groesse)
-    if vorher is not None and _letzte_seite(vorher) == erste.seite:
+    if abstand_vor is not None:
+        abstand = oben_kasten - abstand_vor  # erster Absatz einer Tabellenzelle: Abstand zur Reihe darüber
+    elif vorher is not None and _letzte_seite(vorher) == erste.seite:
         unten_vorher = _unterkante(vorher, zeilenhoehen)
         abstand = oben_kasten - unten_vorher
     else:
@@ -1059,7 +1235,14 @@ def _absatz_html(
     if marker is not None:
         text_ab = next((i for i, z in enumerate(erste.zeichen) if abs(z[1] - marker[1]) < 0.01), 0)
     if ausrichtung == "justify":
-        _stauchen(absatz, rechts, text_ab)
+        if pixel:
+            for nr, zeile in enumerate(absatz.zeilen):
+                _zeichenabstand(zeile, text_ab if nr == 0 else 0, nur_im_wort=True)
+        kante = rechts
+        if absatz.rand_rechts is not None and absatz.rand_rechts < rechts - 0.5:
+            kante = absatz.rand_rechts + 0.25
+            stile.append(f"padding-right: {_pt(rechts - kante)}")
+        _stauchen(absatz, kante, text_ab)
     else:
         for nr, zeile in enumerate(absatz.zeilen):
             if pixel:
@@ -1105,16 +1288,83 @@ def _absatz_html(
     return f'<p style="{"; ".join(stile)}">{inhalt}</p>'
 
 
+def _tabelle_html(
+    absatz: Absatz,
+    vorher: Absatz | None,
+    links: float,
+    rechts: float,
+    basis_schrift: str,
+    basis_groesse: float,
+    zeilenhoehen: dict[tuple[str, float], float],
+    pixel: bool,
+) -> str:
+    """Spalten ohne Rahmen als Tabelle: feste Spaltenbreiten, Zellen ohne Innenabstand, Abstände über die Absätze."""
+    tabelle = absatz.tabelle
+    assert tabelle is not None
+    grenzen = [*tabelle.spalten, rechts]
+    breiten_px = [max(1, round((b - a) * 4 / 3)) for a, b in pairwise(grenzen)]
+    erste = _erste_zeile(tabelle)
+    if vorher is not None and _letzte_seite(vorher) == tabelle.seite:
+        unten = _unterkante(vorher, zeilenhoehen)
+    else:
+        haupt = erste.haupt()
+        unten = erste.grund - _grundlinie_im_kasten(
+            zeilenhoehen.get((haupt.schrift, round(haupt.groesse, 1)), haupt.groesse * 1.15),
+            haupt.schrift,
+            haupt.groesse,
+        )
+    tabelle.oben = unten
+    reihen_html = []
+    for reihe in tabelle.reihen:
+        zellen_html = []
+        reihe_unten = unten
+        for nummer, zellzeilen in enumerate(reihe):
+            links_zelle, rechts_zelle = grenzen[nummer], grenzen[nummer + 1]
+            inhalt = ""
+            if zellzeilen:
+                absaetze = _absaetze(zellzeilen, links_zelle, rechts_zelle, [])
+                teile = []
+                vorher_zelle: Absatz | None = None
+                for zellabsatz in absaetze:
+                    teile.append(
+                        _absatz_html(
+                            zellabsatz,
+                            vorher_zelle,
+                            links_zelle,
+                            rechts_zelle,
+                            basis_schrift,
+                            basis_groesse,
+                            zeilenhoehen,
+                            pixel,
+                            abstand_vor=unten if vorher_zelle is None else None,
+                        )
+                    )
+                    vorher_zelle = zellabsatz
+                inhalt = "".join(teile)
+                reihe_unten = max(reihe_unten, _unterkante(absaetze[-1], zeilenhoehen))
+            else:
+                inhalt = "<p></p>"
+            zellen_html.append(f'<td colwidth="{breiten_px[nummer]}">{inhalt}</td>')
+        reihen_html.append(f"<tr>{''.join(zellen_html)}</tr>")
+        unten = reihe_unten
+    tabelle.unten = unten
+    return f'<table data-rahmen="ohne"><tbody>{"".join(reihen_html)}</tbody></table>'
+
+
 def _letzte_seite(absatz: Absatz) -> int:
     if absatz.art == "grafik" and absatz.bereich is not None:
         return absatz.bereich.seite
+    if absatz.art == "tabelle" and absatz.tabelle is not None:
+        return absatz.tabelle.seite
     return absatz.zeilen[-1].seite
 
 
 def _unterkante(absatz: Absatz, zeilenhoehen: dict[tuple[str, float], float]) -> float:
-    """Unterkante des letzten Zeilenkastens (bzw. der Grafik) im Original."""
+    """Unterkante des letzten Zeilenkastens (bzw. der Grafik oder Tabelle) im Original."""
     if absatz.art == "grafik" and absatz.bereich is not None:
         return absatz.bereich.unten
+    if absatz.art == "tabelle" and absatz.tabelle is not None:
+        return absatz.tabelle.unten
     letzte = absatz.zeilen[-1]
     haupt = absatz.zeilen[0].haupt()
     abstaende = [b.grund - a.grund for a, b in pairwise(absatz.zeilen) if a.seite == b.seite]
@@ -1135,12 +1385,14 @@ def _ausrichtung(absatz: Absatz, links: float, rechts: float) -> str:
         return "center"
     innen = zeilen[:-1]
     if len(innen) >= 2:
-        am_rand = [z for z in innen if abs(z.x1 - rechts) < 1.5]
-        if len(am_rand) >= max(2, round(len(innen) * 0.6)):
-            # Blocksatz. Zeilen, die nicht bis zum Rand reichen, enden mit einem manuellen Zeilenumbruch: Word dehnt
-            # sie dann nicht
+        # Blocksatz: die meisten Zeilen enden an derselben Kante, am Satzspiegel oder kurz davor (Einzug rechts)
+        kante = statistics.median(z.x1 for z in innen)
+        am_rand = [z for z in innen if abs(z.x1 - kante) < 0.8]
+        if kante > rechts - 20 and len(am_rand) >= max(2, round(len(innen) * 0.6)):
+            absatz.rand_rechts = max(z.x1 for z in am_rand)
+            # Zeilen, die nicht bis zur Kante reichen, enden mit einem manuellen Zeilenumbruch: Word dehnt sie nicht
             for zeile in innen:
-                zeile.harter_umbruch = abs(zeile.x1 - rechts) >= 1.5
+                zeile.harter_umbruch = abs(zeile.x1 - kante) >= 1.5
             return "justify"
     if len(zeilen) == 2 and abs(zeilen[0].x1 - rechts) < 1.0:
         return "justify"
@@ -1290,7 +1542,8 @@ def uebernehmen(daten: bytes) -> Ergebnis:
         fluss = [z for z in zeilen if z.rolle == "fluss"]
         links, rechts = _spalte(fluss, breite)
         im_fluss = _zusammenfassen([g for g in gruppen if g.rolle == "fluss"], fluss)
-        absaetze = _absaetze(fluss, links, rechts, im_fluss)
+        tabellen = _tabellen_erkennen(fluss, links, rechts)
+        absaetze = _absaetze(fluss, links, rechts, im_fluss, tabellen)
         # Zeichenbreiten auf Pixel gerundet (Word im Kompatibilitätsmodus): Breite je Zeile über den Zeichenabstand
         pixel = _pixelgerundet(fluss)
         for absatz in absaetze:
@@ -1316,9 +1569,16 @@ def uebernehmen(daten: bytes) -> Ergebnis:
 
         teile: list[str] = []
         vorher: Absatz | None = None
+        unten_grenze = _untere_grenze(absaetze, zeilenhoehen)
         for absatz in absaetze:
+            if vorher is not None and _erzwungener_umbruch(vorher, absatz, unten_grenze, zeilenhoehen):
+                teile.append('<div data-page-break="true"></div>')
             if absatz.art == "grafik":
                 teile.append(_grafik_html(absatz, vorher, links, zeilenhoehen))
+            elif absatz.art == "tabelle":
+                teile.append(
+                    _tabelle_html(absatz, vorher, links, rechts, basis_schrift, basis_groesse, zeilenhoehen, pixel)
+                )
             else:
                 teile.append(
                     _absatz_html(absatz, vorher, links, rechts, basis_schrift, basis_groesse, zeilenhoehen, pixel)
@@ -1348,7 +1608,7 @@ def uebernehmen(daten: bytes) -> Ergebnis:
         # Hintergrund: Originalseiten ohne Fließtext und ohne Grafiken im Fluss
         weg_zeilen_je_seite: dict[int, list[Zeile]] = {}
         for zeile in zeilen:
-            if zeile.rolle in ("fluss", "grafik", "seitenzahl"):
+            if zeile.rolle in ("fluss", "grafik", "seitenzahl", "tabelle"):
                 weg_zeilen_je_seite.setdefault(zeile.seite, []).append(zeile)
         weg_bereiche_je_seite: dict[int, list[Bereich]] = {}
         for bereich in im_fluss:
@@ -1429,6 +1689,54 @@ def _mit_unterschneidung(zeilen: list[Zeile]) -> bool:
     return paare > 50 and verschoben / paare > 0.02
 
 
+def _erste_seite(absatz: Absatz) -> int:
+    if absatz.art == "grafik" and absatz.bereich is not None:
+        return absatz.bereich.seite
+    if absatz.art == "tabelle" and absatz.tabelle is not None:
+        return absatz.tabelle.seite
+    return absatz.zeilen[0].seite
+
+
+def _untere_grenze(absaetze: list[Absatz], zeilenhoehen: dict[tuple[str, float], float]) -> float:
+    """Tiefste Unterkante des Fließtexts im Original (Näherung der unteren Satzspiegelkante)."""
+    tiefste = 0.0
+    for absatz in absaetze:
+        if absatz.art == "text":
+            tiefste = max(tiefste, _unterkante(absatz, zeilenhoehen))
+        elif absatz.art == "grafik" and absatz.bereich is not None:
+            tiefste = max(tiefste, absatz.bereich.unten)
+    return tiefste
+
+
+def _erzwungener_umbruch(
+    vorher: Absatz, absatz: Absatz, unten_grenze: float, zeilenhoehen: dict[tuple[str, float], float]
+) -> bool:
+    """
+    Beginnt ``absatz`` im Original auf einer neuen Seite, obwohl auf der vorigen noch Platz war? Dann kam der Umbruch
+    nicht aus Platzmangel (manueller Seitenumbruch, „Absätze nicht trennen“, Tabellenzeile zusammenhalten); er wird
+    als Seitenumbruch übernommen. Ein Umbruch aus Platzmangel ergibt sich im Satz von selbst.
+    """
+    if absatz.art == "text" and any(z.seite != absatz.zeilen[0].seite for z in absatz.zeilen):
+        return False
+    if _erste_seite(absatz) <= _letzte_seite(vorher):
+        return False
+    platz = unten_grenze - _unterkante(vorher, zeilenhoehen)
+    if absatz.art == "text":
+        haupt = absatz.zeilen[0].haupt()
+        takt = zeilenhoehen.get((haupt.schrift, round(haupt.groesse, 1)), haupt.groesse * 1.2)
+        teilbar = len(absatz.zeilen) >= 4
+        bedarf = takt * 2 if teilbar else takt * len(absatz.zeilen)
+    elif absatz.art == "grafik" and absatz.bereich is not None:
+        bedarf = absatz.bereich.unten - absatz.bereich.oben
+    elif absatz.art == "tabelle" and absatz.tabelle is not None:
+        erste = absatz.tabelle.reihen[0]
+        zeilen_der_reihe = max(len(zelle) for zelle in erste) or 1
+        bedarf = zeilen_der_reihe * _erste_zeile(absatz.tabelle).groesse * 1.2
+    else:
+        return False
+    return platz > bedarf + 2
+
+
 def _satzspiegel(
     absaetze: list[Absatz], zeilenhoehen: dict[tuple[str, float], float], seiten: int, hoehe: float
 ) -> tuple[float, float, float]:
@@ -1439,6 +1747,12 @@ def _satzspiegel(
             b = absatz.bereich
             oben_je_seite.setdefault(b.seite, b.oben)
             unten_max = max(unten_max, b.unten)
+            continue
+        if absatz.art == "tabelle" and absatz.tabelle is not None:
+            t = absatz.tabelle
+            if t.seite not in oben_je_seite or t.oben < oben_je_seite[t.seite]:
+                oben_je_seite[t.seite] = t.oben
+            unten_max = max(unten_max, t.unten)
             continue
         haupt = absatz.zeilen[0].haupt()
         abstaende = [b.grund - a.grund for a, b in pairwise(absatz.zeilen) if a.seite == b.seite]

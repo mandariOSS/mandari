@@ -18,6 +18,7 @@ const ABSATZ: Stile = {
   abstandUnten: 'margin-bottom',
   zeilenhoehe: 'line-height',
   einzugLinks: 'padding-left',
+  einzugRechts: 'padding-right',
   einzugErste: 'text-indent',
   tabweite: 'tab-size',
   absatzSchrift: 'font-family',
@@ -64,6 +65,17 @@ export const Absatzformat = Extension.create({
       { types: ['paragraph', 'heading'], attributes: attribute(ABSATZ) },
       { types: ['image'], attributes: attribute(BILD) },
       { types: ['textStyle'], attributes: attribute(LAUF) },
+      {
+        // Tabelle ohne Rahmen (Spalten eines treu übernommenen PDFs)
+        types: ['table'],
+        attributes: {
+          rahmen: {
+            default: null,
+            parseHTML: (el: HTMLElement) => (el.getAttribute('data-rahmen') === 'ohne' ? 'ohne' : null),
+            renderHTML: (werte: Record<string, unknown>) => (werte.rahmen === 'ohne' ? { 'data-rahmen': 'ohne' } : {}),
+          },
+        },
+      },
     ]
   },
 })
